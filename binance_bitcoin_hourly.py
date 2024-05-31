@@ -3,49 +3,62 @@ import pandas as pd
 import datetime
 import time
 
-def fetch_binance_btc_hourly_history(start_date, end_date):
+def fetch_binance_btc_9am_history(start_date, end_date):
     url = "https://api.binance.com/api/v3/klines"
-    start_timestamp = int(start_date.timestamp() * 1000)
-    end_timestamp = int(end_date.timestamp() * 1000)
-    
+    current_date = start_date
     all_data = []
-    
-    while start_timestamp < end_timestamp:
+    current_year = start_date.year
+
+    while current_date < end_date:
+        start_9am = datetime.datetime(current_date.year, current_date.month, current_date.day, 9)
+        end_10am = start_9am + datetime.timedelta(hours=1)
+        start_timestamp = int(start_9am.timestamp() * 1000)
+        end_timestamp = int(end_10am.timestamp() * 1000 - 1000)
+
         params = {
             'symbol': 'BTCUSDT',
             'interval': '1h',
             'startTime': start_timestamp,
-            'endTime': min(start_timestamp + 60000 * 1000, end_timestamp)  # 최대 1000개의 데이터를 한번에 가져옴
+            'endTime': end_timestamp
         }
+
         response = requests.get(url, params=params)
         data = response.json()
-        
-        if not data:
-            break
-        
-        for entry in data:
-            all_data.append({
-                'Date': datetime.datetime.utcfromtimestamp(entry[0] / 1000),
-                'Open': float(entry[1]),
-                'High': float(entry[2]),
-                'Low': float(entry[3]),
-                'Close': float(entry[4]),
-                'Volume': float(entry[5])
-            })
-        
-        # 다음 타임스탬프로 이동 (마지막 데이터의 타임스탬프 + 1밀리초)
-        start_timestamp = data[-1][0] + 1
-        
-        # API rate limit을 피하기 위해 잠시 대기
-        time.sleep(1)
-    
+
+        if data:
+            for entry in data:
+                entry_time = datetime.datetime.utcfromtimestamp(entry[0] / 1000)
+                if entry_time.hour == 0:  # 오전 9시 데이터 필터링
+                    all_data.append({
+                        'Date': entry_time,
+                        'Open': float(entry[1]),
+                        'High': float(entry[2]),
+                        'Low': float(entry[3]),
+                        'Close': float(entry[4]),
+                        'Volume': float(entry[5])
+                    })
+                    break  # 오전 9시의 첫 데이터만 필요하므로 루프 종료
+
+        # 연도가 변경되면 데이터를 CSV 파일로 저장
+        if current_date.year != current_year:
+            df = pd.DataFrame(all_data)
+            df.to_csv(f'binance_btc_daily_9am_history_{current_year}.csv', index=False)
+            all_data = []  # 데이터 초기화
+            current_year = current_date.year  # 현재 연도 업데이트
+
+        current_date += datetime.timedelta(days=1)
+        time.sleep(1)  # API rate limit을 피하기 위해 잠시 대기
+
+    # 마지막 남은 데이터를 CSV 파일로 저장
+    if all_data:
+        df = pd.DataFrame(all_data)
+        df.to_csv(f'binance_btc_daily_9am_history_{current_year}.csv', index=False)
+
     return pd.DataFrame(all_data)
 
 # 2017년 9월 1일부터 현재까지의 데이터 가져오기
-dates = [[2017,9,1], [2018,1,1], [2018,5,1], [2018,9,1], [2019,1,1], [2019,5,1], [2019,9,1], [2020,1,1], [2020,5,1], [2020,9,1], [2021,1,1], [2021,5,1], [2021,9,1], [2022,1,1], [2022,5,1], [2022,9,1], [2023,1,1], [2023,5,1], [2023,9,1], [2024,1,1], [2024,5,1]]
-for date in dates:
-    start_date = datetime.datetime(date[0], date[1], date[2])
-    end_date = datetime.datetime.now()
-    btc_binance_hourly_data = fetch_binance_btc_hourly_history(start_date, end_date)
-    print(btc_binance_hourly_data.head())
-    btc_binance_hourly_data.to_csv(f'binance_btc_hourly_history_{date[0]}_{date[1]}_{date[2]}.csv', index=False)
+start_date = datetime.datetime(2019, 1, 1)
+end_date = datetime.datetime(2020, 1, 2)
+
+btc_binance_9am_data = fetch_binance_btc_9am_history(start_date, end_date)
+print(btc_binance_9am_data.head())
